@@ -11,7 +11,6 @@ Features:
 - Example articles for testing
 - Professional UI with custom styling
 """
-
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -21,11 +20,13 @@ import json
 import os
 import glob
 from datetime import datetime
-import sklearn
+
+# Scikit-learn imports - ИЗМЕНИМ ПОРЯДОК
+import joblib                                         # ← ПЕРВЫМ
+import sklearn                                        # ← ВТОРЫМ
+from sklearn.pipeline import Pipeline
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.svm import LinearSVC
-from sklearn.pipeline import Pipeline   
-import joblib                 
 
 # ============================================================================
 # PAGE CONFIGURATION
