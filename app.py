@@ -14,17 +14,12 @@ Features:
 import streamlit as st
 import pandas as pd
 import numpy as np
-import pickle
 import re
 import json
 import os
 import glob
 from datetime import datetime
-
-# Scikit-learn imports - ИЗМЕНИМ ПОРЯДОК
-from sklearn.pipeline import Pipeline
-from sklearn.feature_extraction.text import TfidfVectorizer
-from sklearn.svm import LinearSVC
+import joblib
 
 # ============================================================================
 # PAGE CONFIGURATION
@@ -41,665 +36,560 @@ st.set_page_config(
 # CUSTOM CSS
 # ============================================================================
 
-st.markdown("""
+CUSTOM_CSS = """
 <style>
-    /* Main header */
-    .main-header {
-        font-size: 3rem;
-        color: #1f77b4;
-        text-align: center;
-        font-weight: bold;
-        margin-bottom: 1rem;
-    }
-    
-    /* Subtitle */
-    .subtitle {
-        text-align: center;
-        color: #666;
-        font-size: 1.1rem;
-        margin-bottom: 2rem;
-    }
-    
-    /* Prediction boxes */
-    .prediction-box {
-        padding: 2rem;
-        border-radius: 15px;
-        margin: 1.5rem 0;
-        text-align: center;
-        box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
-    }
-    
-    .real-news {
-        background: linear-gradient(135deg, #d4edda 0%, #c3e6cb 100%);
-        border: 3px solid #28a745;
-    }
-    
-    .fake-news {
-        background: linear-gradient(135deg, #f8d7da 0%, #f5c6cb 100%);
-        border: 3px solid #dc3545;
-    }
-    
-    .prediction-icon {
-        font-size: 4rem;
-        margin-bottom: 0.5rem;
-    }
-    
-    .prediction-label {
-        font-size: 2.5rem;
-        font-weight: bold;
-        margin: 0.5rem 0;
-    }
-    
-    .confidence-text {
-        font-size: 1.5rem;
-        color: #333;
-    }
-    
-    /* Feature indicators */
-    .indicator-box {
-        background-color: #f8f9fa;
-        padding: 1rem;
-        border-radius: 10px;
-        margin: 0.5rem 0;
-        border-left: 4px solid #1f77b4;
-    }
-    
-    .indicator-positive {
-        border-left-color: #28a745;
-        background-color: #d4edda;
-    }
-    
-    .indicator-negative {
-        border-left-color: #dc3545;
-        background-color: #f8d7da;
-    }
-    
-    /* Metric cards */
-    .metric-card {
-        background-color: white;
-        padding: 1rem;
-        border-radius: 10px;
-        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
-        text-align: center;
-    }
-    
-    /* Example article card */
-    .example-card {
-        background-color: #fff3cd;
-        border: 2px solid #ffc107;
-        padding: 1rem;
-        border-radius: 10px;
-        margin: 0.5rem 0;
-        cursor: pointer;
-        transition: transform 0.2s;
-    }
-    
-    .example-card:hover {
-        transform: translateY(-2px);
-        box-shadow: 0 4px 8px rgba(0, 0, 0, 0.15);
-    }
-    
-    /* Buttons */
-    .stButton>button {
-        width: 100%;
-        background: linear-gradient(135deg, #1f77b4 0%, #1557a0 100%);
-        color: white;
-        font-size: 1.2rem;
-        font-weight: bold;
-        padding: 0.75rem 2rem;
-        border-radius: 10px;
-        border: none;
-        box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
-        transition: all 0.3s;
-    }
-    
-    .stButton>button:hover {
-        transform: translateY(-2px);
-        box-shadow: 0 6px 12px rgba(0, 0, 0, 0.15);
-    }
-    
-    /* Info boxes */
-    .info-box {
-        background-color: #e7f3ff;
-        border-left: 4px solid #0066cc;
-        padding: 1rem;
-        border-radius: 5px;
-        margin: 1rem 0;
-    }
-    
-    /* Footer */
-    .footer {
-        text-align: center;
-        color: #666;
-        padding: 2rem;
-        margin-top: 3rem;
-        border-top: 1px solid #ddd;
-    }
+/* Global styles */
+main .block-container {
+    padding-top: 2rem;
+    padding-bottom: 2rem;
+    max-width: 1200px;
+}
+
+/* Title styling */
+.title-container {
+    text-align: left;
+    margin-bottom: 1.5rem;
+}
+
+.title-badge {
+    display: inline-block;
+    background: linear-gradient(90deg, #ff4b4b, #ff9f43);
+    color: white;
+    padding: 0.25rem 0.75rem;
+    border-radius: 999px;
+    font-size: 0.8rem;
+    font-weight: 600;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+}
+
+.title-main {
+    font-size: 2.4rem;
+    font-weight: 800;
+    margin-top: 0.5rem;
+    margin-bottom: 0.4rem;
+    letter-spacing: 0.02em;
+}
+
+.title-subtitle {
+    color: #6c757d;
+    font-size: 0.98rem;
+    max-width: 600px;
+}
+
+/* Layout cards */
+.stAlert {
+    border-radius: 12px;
+}
+
+/* Metric cards */
+.metric-card {
+    padding: 0.75rem 1rem;
+    border-radius: 10px;
+    background: #f8f9fa;
+    border: 1px solid #e9ecef;
+    margin-bottom: 0.5rem;
+}
+
+.metric-title {
+    font-size: 0.85rem;
+    color: #6c757d;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    margin-bottom: 0.1rem;
+}
+
+.metric-value {
+    font-size: 1.2rem;
+    font-weight: 700;
+}
+
+/* Text area styling */
+textarea {
+    font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+/* Prediction badge */
+.prediction-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    padding: 0.35rem 0.75rem;
+    border-radius: 999px;
+    font-size: 0.9rem;
+    font-weight: 600;
+}
+
+/* Fake / Real colors */
+.fake-badge {
+    background: rgba(220, 53, 69, 0.08);
+    color: #dc3545;
+    border: 1px solid rgba(220, 53, 69, 0.4);
+}
+
+.real-badge {
+    background: rgba(40, 167, 69, 0.08);
+    color: #28a745;
+    border: 1px solid rgba(40, 167, 69, 0.4);
+}
+
+/* Confidence bar container */
+.confidence-bar-container {
+    width: 100%;
+    background-color: #f1f3f5;
+    border-radius: 999px;
+    overflow: hidden;
+    height: 20px;
+    margin: 0.4rem 0 0.2rem 0;
+    border: 1px solid #dee2e6;
+}
+
+/* Confidence bar fill */
+.confidence-bar-fill-fake {
+    height: 100%;
+    background: linear-gradient(90deg, #ff6b6b 0%, #dc3545 100%);
+}
+
+.confidence-bar-fill-real {
+    height: 100%;
+    background: linear-gradient(90deg, #51cf66 0%, #28a745 100%);
+}
+
+/* Confidence label */
+.confidence-label {
+    font-size: 0.85rem;
+    color: #495057;
+}
+
+/* Explanation list */
+.explanation-list {
+    margin-top: 0.3rem;
+}
+
+.explanation-item {
+    display: inline-block;
+    padding: 0.18rem 0.6rem;
+    border-radius: 999px;
+    background-color: #f1f3f5;
+    margin: 0.08rem;
+    font-size: 0.8rem;
+}
+
+/* Sidebar */
+.css-1d391kg, .css-1d391kg.e1fqkh3o3 {  /* sidebar container */
+    padding-top: 1.5rem;
+}
+
+/* Footer */
+.footer {
+    margin-top: 2rem;
+    padding-top: 1rem;
+    border-top: 1px solid #e9ecef;
+    color: #868e96;
+    font-size: 0.85rem;
+}
 </style>
-""", unsafe_allow_html=True)
+"""
+
+st.markdown(CUSTOM_CSS, unsafe_allow_html=True)
 
 # ============================================================================
-# LOAD MODEL AND COMPONENTS
+# MODEL & METADATA LOADING
 # ============================================================================
 
-@st.cache_resource
+
 def load_model_and_metadata():
     """Load the trained pipeline and metadata"""
-    
+
     # Find pipeline file
-    import glob
-    pipeline_files = glob.glob('fake_news_pipeline_*.pkl')
-    
+    pipeline_files = glob.glob("fake_news_pipeline_*.pkl")
+
     if not pipeline_files:
-        st.error("❌ Model file not found! Please ensure 'fake_news_pipeline_*.pkl' is in the same directory.")
+        st.error(
+            "❌ Model file not found! Please ensure 'fake_news_pipeline_*.pkl' "
+            "is in the same directory."
+        )
         st.stop()
-    
-    # Use the most recent file
+
+    # Use the most recent file (по имени, если есть timestamp)
     pipeline_file = sorted(pipeline_files)[-1]
-    
+
+    # Load model with joblib (тем же способом, как она была сохранена)
     try:
-        with open(pipeline_file, 'rb') as f:
-            pipeline = pickle.load(f)
+        pipeline = joblib.load(pipeline_file)
         st.success(f"✅ Loaded model: {pipeline_file}")
     except Exception as e:
         st.error(f"❌ Error loading model: {e}")
         st.stop()
-    
-    # Load metadata
-    try:
-        with open('best_model_info.json', 'r') as f:
-            metadata = json.load(f)
-    except FileNotFoundError:
+
+    # Load metadata if available
+    metadata_file = "best_model_info.json"
+    metadata = None
+
+    if os.path.exists(metadata_file):
+        try:
+            with open(metadata_file, "r", encoding="utf-8") as f:
+                metadata = json.load(f)
+        except Exception as e:
+            st.warning(
+                f"⚠️ Could not load metadata from {metadata_file}: {e}"
+            )
+            metadata = {}
+    else:
         st.warning("⚠️ Metadata file not found. Using default values.")
         metadata = {
-            'model_name': 'Decision Tree',
-            'metrics': {
-                'test_accuracy': 0.9951,
-                'precision': 0.9945,
-                'recall': 0.9964,
-                'f1': 0.9955
-            }
+            "model_name": "Decision Tree",
+            "metrics": {
+                "test_accuracy": 0.9951,
+                "precision": 0.9945,
+                "recall": 0.9964,
+                "f1": 0.9955,
+            },
         }
-    
+
     return pipeline, metadata
+
 
 # Load model
 with st.spinner("🔄 Loading model..."):
     pipeline, metadata = load_model_and_metadata()
 
 # ============================================================================
-# TEXT PREPROCESSING
+# TEXT PREPROCESSING (same as in training)
 # ============================================================================
 
-def preprocess_text(text):
-    """Clean and preprocess text (same as training)"""
-    if not text or text.strip() == "":
-        return ""
-    
+
+def preprocess_text(text: str) -> str:
+    """Preprocess text similar to training pipeline"""
+
     # Lowercase
     text = text.lower()
-    
+
     # Remove URLs
-    text = re.sub(r'http\S+|www\S+|https\S+', '', text, flags=re.MULTILINE)
-    
+    text = re.sub(r"http\S+|www\.\S+", " ", text)
+
     # Remove HTML tags
-    text = re.sub(r'<.*?>', '', text)
-    
-    # Remove special characters (keep only letters and spaces)
-    text = re.sub(r'[^a-zA-Z\s]', ' ', text)
-    
+    text = re.sub(r"<.*?>", " ", text)
+
+    # Keep only letters and spaces
+    text = re.sub(r"[^a-zA-Z\s]", " ", text)
+
     # Remove extra whitespace
-    text = ' '.join(text.split())
-    
+    text = " ".join(text.split())
+
     return text
+
 
 # ============================================================================
 # EXPLANATION GENERATOR
 # ============================================================================
 
+
 def generate_explanation(text, prediction, confidence):
     """Generate human-readable explanation for the prediction"""
-    
+
     # Process text
     processed = preprocess_text(text)
     words = processed.split()
-    
-    # Define keyword indicators
+
+    # Very simple keyword-based explanation for demo purposes
     fake_keywords = [
-        'breaking', 'shocking', 'unbelievable', 'incredible', 'amazing',
-        'must', 'watch', 'video', 'revealed', 'truth', 'exposed', 'secret',
-        'they', 'dont', 'want', 'conspiracy', 'hoax', 'scam', 'lies',
-        'censored', 'banned', 'hidden', 'shocking', 'bombshell'
+        "shocking",
+        "breaking",
+        "exclusive",
+        "you won",
+        "click",
+        "share",
+        "viral",
+        "conspiracy",
+        "secret",
+        "rumor",
     ]
-    
     real_keywords = [
-        'reuters', 'said', 'according', 'official', 'government', 
-        'president', 'report', 'statement', 'announced', 'confirmed',
-        'minister', 'spokesman', 'agency', 'committee', 'department',
-        'parliament', 'congress', 'senate', 'representative', 'secretary'
+        "according",
+        "report",
+        "official",
+        "data",
+        "study",
+        "research",
+        "analysis",
+        "statement",
+        "confirmed",
+        "source",
     ]
-    
-    # Find indicators in text
-    found_fake = [w for w in words if w in fake_keywords]
-    found_real = [w for w in words if w in real_keywords]
-    
-    # Text statistics
-    stats = {
-        'word_count': len(words),
-        'unique_words': len(set(words)),
-        'avg_word_length': np.mean([len(w) for w in words]) if words else 0,
-        'fake_indicators': len(found_fake),
-        'real_indicators': len(found_real)
-    }
-    
-    return {
-        'fake_indicators': found_fake[:10],  # Top 10
-        'real_indicators': found_real[:10],
-        'stats': stats,
-        'all_words': words[:30]  # First 30 words
+
+    used_fake_keywords = [
+        kw for kw in fake_keywords if kw in processed.lower()
+    ]
+    used_real_keywords = [
+        kw for kw in real_keywords if kw in processed.lower()
+    ]
+
+    explanation = {
+        "fake_keywords": used_fake_keywords,
+        "real_keywords": used_real_keywords,
     }
 
-# ============================================================================
-# EXAMPLE ARTICLES
-# ============================================================================
+    return explanation
 
-EXAMPLES = {
-    "📰 Real News Example 1": """
-WASHINGTON (Reuters) - The U.S. House of Representatives approved a bill on Thursday 
-that would impose new sanctions on Russia and restrict President Donald Trump's ability 
-to ease penalties against Moscow. The measure, which passed by a vote of 419-3, follows 
-allegations of Russian interference in the 2016 U.S. presidential election. The bill 
-now moves to the Senate for consideration. White House officials said Trump would review 
-the legislation carefully before making any decisions.
-    """,
-    
-    "📰 Real News Example 2": """
-According to a statement released by the Ministry of Health, the new vaccination program 
-will begin next month in all major cities across the country. Health officials confirmed 
-that the vaccines have been approved by regulatory authorities and meet international 
-safety standards. The minister announced during a press conference that priority will be 
-given to healthcare workers and elderly citizens. Distribution centers are being set up 
-in hospitals and community health facilities nationwide.
-    """,
-    
-    "⚠️ Fake News Example 1": """
-BREAKING NEWS: SHOCKING discovery reveals what the government has been hiding from you 
-for DECADES! You absolutely WON'T BELIEVE what scientists have just uncovered! This 
-INCREDIBLE revelation will change EVERYTHING you thought you knew! They tried to SILENCE 
-us, but we have the PROOF! Click here NOW to watch the video before it gets CENSORED! 
-Share this EVERYWHERE before they take it down! This is NOT a hoax! The TRUTH must be told!
-    """,
-    
-    "⚠️ Fake News Example 2": """
-EXPOSED: The secret conspiracy that mainstream media REFUSES to cover! Insiders reveal 
-the SHOCKING truth about what's REALLY happening behind closed doors! They thought they 
-could hide it from us, but brave whistleblowers have come forward with UNDENIABLE evidence! 
-Watch this bombshell video NOW before it disappears! Don't trust the LIES they're feeding 
-you! WAKE UP and see the TRUTH! Share immediately!
-    """
-}
-
-# ============================================================================
-# HEADER
-# ============================================================================
-
-st.markdown('<h1 class="main-header">🔍 Fake News Detector</h1>', unsafe_allow_html=True)
-st.markdown(
-    '<p class="subtitle">AI-Powered News Verification System | Powered by Machine Learning</p>',
-    unsafe_allow_html=True
-)
 
 # ============================================================================
 # SIDEBAR
 # ============================================================================
 
 with st.sidebar:
-    st.header("📊 Model Information")
-    
-    st.markdown(f"""
-    **Model:** {metadata['model_name']}  
-    **Accuracy:** {metadata['metrics']['test_accuracy']:.2%}  
-    **Precision:** {metadata['metrics']['precision']:.2%}  
-    **Recall:** {metadata['metrics']['recall']:.2%}  
-    **F1-Score:** {metadata['metrics']['f1']:.4f}
-    """)
-    
-    st.markdown("---")
-    
-    st.header("📖 How It Works")
-    st.markdown("""
-    1. **Enter** or paste a news article
-    2. **Click** "Analyze Article"
-    3. **View** instant prediction
-    4. **Understand** the reasoning
-    """)
-    
-    st.markdown("---")
-    
-    st.header("🎯 Why Trust This?")
-    st.markdown("""
-    ✅ **99.5% Accuracy** on test data  
-    ✅ **Trained on 35,000+** articles  
-    ✅ **Explainable** predictions  
-    ✅ **Fast** real-time analysis  
-    """)
-    
-    st.markdown("---")
-    
-    st.header("ℹ️ About")
-    st.markdown("""
-    This system uses a **Decision Tree classifier** 
-    trained on the **ISOT Fake News Dataset**.
-    
-    **Dataset:** 35,000+ articles (2016-2017)  
-    **Sources:** Reuters, fake news websites  
-    **Performance:** 99.51% accuracy
-    """)
-    
-    st.markdown("---")
-    
-    # Example selector
-    if st.button("📰 Load Example Articles"):
-        st.session_state['show_examples'] = True
-    
-    st.markdown("---")
-    
-    st.markdown("""
-    <div style='text-align: center; color: #999; font-size: 0.8rem;'>
-    ⚠️ Educational Tool<br>
-    Always verify from multiple sources
-    </div>
-    """, unsafe_allow_html=True)
+    st.markdown("### ⚙️ Model Information")
 
-# ============================================================================
-# EXAMPLE ARTICLES SELECTOR
-# ============================================================================
+    model_name = metadata.get("model_name", "Decision Tree")
+    metrics = metadata.get("metrics", {})
 
-if st.session_state.get('show_examples', False):
-    with st.expander("📰 Example Articles - Click to Use", expanded=True):
-        selected_example = st.radio(
-            "Choose an example:",
-            list(EXAMPLES.keys()),
-            key="example_selector"
+    st.markdown(
+        f"**Model:** `{model_name}`  \n"
+        f"**Vectorizer:** `{metadata.get('vectorizer_name', 'TF-IDF')}`"
+    )
+
+    st.markdown("---")
+    st.markdown("#### 📊 Key metrics")
+
+    col_m1, col_m2 = st.columns(2)
+
+    with col_m1:
+        acc = metrics.get("test_accuracy", 0.0)
+        st.markdown(
+            f"<div class='metric-card'>"
+            f"<div class='metric-title'>Accuracy</div>"
+            f"<div class='metric-value'>{acc * 100:.2f}%</div>"
+            f"</div>",
+            unsafe_allow_html=True,
         )
-        
-        col1, col2 = st.columns(2)
-        with col1:
-            if st.button("✅ Use This Example", use_container_width=True):
-                st.session_state['input_text'] = EXAMPLES[selected_example]
-                st.session_state['show_examples'] = False
-                st.rerun()
-        with col2:
-            if st.button("❌ Cancel", use_container_width=True):
-                st.session_state['show_examples'] = False
-                st.rerun()
-        
-        st.markdown("**Preview:**")
-        st.text(EXAMPLES[selected_example][:200] + "...")
+
+        prec = metrics.get("precision", 0.0)
+        st.markdown(
+            f"<div class='metric-card'>"
+            f"<div class='metric-title'>Precision</div>"
+            f"<div class='metric-value'>{prec * 100:.2f}%</div>"
+            f"</div>",
+            unsafe_allow_html=True,
+        )
+
+    with col_m2:
+        rec = metrics.get("recall", 0.0)
+        st.markdown(
+            f"<div class='metric-card'>"
+            f"<div class='metric-title'>Recall</div>"
+            f"<div class='metric-value'>{rec * 100:.2f}%</div>"
+            f"</div>",
+            unsafe_allow_html=True,
+        )
+
+        f1 = metrics.get("f1", 0.0)
+        st.markdown(
+            f"<div class='metric-card'>"
+            f"<div class='metric-title'>F1-score</div>"
+            f"<div class='metric-value'>{f1 * 100:.2f}%</div>"
+            f"</div>",
+            unsafe_allow_html=True,
+        )
+
+    st.markdown("---")
+    st.markdown("#### 🧪 Try example texts")
+
+    example_fake = st.checkbox("Fill with example *FAKE* article")
+    example_real = st.checkbox("Fill with example *REAL* article")
 
 # ============================================================================
-# INPUT SECTION
+# MAIN LAYOUT
 # ============================================================================
 
-st.header("📝 Enter News Article")
-
-input_text = st.text_area(
-    "Paste or type the news article text below:",
-    value=st.session_state.get('input_text', ''),
-    height=200,
-    placeholder="Example: WASHINGTON (Reuters) - The President announced today that...",
-    help="Enter at least 50 characters for accurate analysis"
+# Title section
+st.markdown(
+    """
+<div class="title-container">
+    <div class="title-badge">Fake News Detection • Demo</div>
+    <h1 class="title-main">Real-time Fake News Classifier</h1>
+    <p class="title-subtitle">
+        Paste any news article or statement, and the model will predict whether it is likely 
+        to be <strong>fake</strong> or <strong>real</strong>, along with confidence and simple explanation.
+    </p>
+</div>
+""",
+    unsafe_allow_html=True,
 )
 
-# Buttons
-col1, col2, col3 = st.columns([2, 1, 1])
-
-with col1:
-    analyze_button = st.button("🔍 Analyze Article", type="primary", use_container_width=True)
-
-with col2:
-    if st.button("📰 Examples", use_container_width=True):
-        st.session_state['show_examples'] = True
-        st.rerun()
-
-with col3:
-    if st.button("🗑️ Clear", use_container_width=True):
-        st.session_state['input_text'] = ''
-        st.rerun()
-
-# Character counter
-char_count = len(input_text.strip())
-if char_count > 0:
-    if char_count < 50:
-        st.warning(f"⚠️ Text too short: {char_count} characters (minimum 50 recommended)")
-    else:
-        st.success(f"✅ Text length: {char_count} characters")
+# Layout columns
+left_col, right_col = st.columns([1.4, 1])
 
 # ============================================================================
-# ANALYSIS AND RESULTS
+# LEFT COLUMN - INPUT
 # ============================================================================
 
-if analyze_button:
-    if not input_text or len(input_text.strip()) < 20:
-        st.error("❌ Please enter a longer text (at least 20 characters)")
+with left_col:
+    st.markdown("#### 📝 Input text")
+
+    default_text = ""
+
+    if example_fake:
+        default_text = (
+            "BREAKING: Scientists discover a secret cure for all diseases, "
+            "but pharmaceutical companies are hiding it to keep profits high."
+        )
+    elif example_real:
+        default_text = (
+            "According to a recent report published by the World Health "
+            "Organization, vaccination campaigns have significantly "
+            "reduced the incidence of measles worldwide."
+        )
+
+    text_input = st.text_area(
+        "Paste news article or statement here:",
+        value=default_text,
+        height=260,
+        placeholder="Paste or type your news text here...",
+    )
+
+    analyze_button = st.button("🔍 Analyze Text", type="primary")
+
+# ============================================================================
+# RIGHT COLUMN - OUTPUT
+# ============================================================================
+
+with right_col:
+    st.markdown("#### 📈 Prediction results")
+
+    if analyze_button:
+        if not text_input.strip():
+            st.warning("Please enter some text to analyze.")
+        else:
+            with st.spinner("Analyzing text..."):
+                # Predict using the pipeline directly
+                prediction = pipeline.predict([text_input])[0]
+
+                # Try to get probabilities if supported
+                fake_confidence = None
+                real_confidence = None
+
+                if hasattr(pipeline, "predict_proba"):
+                    proba = pipeline.predict_proba([text_input])[0]
+                    # Assuming binary classification [FAKE, REAL]
+                    fake_confidence = float(proba[0])
+                    real_confidence = float(proba[1])
+                else:
+                    # If no probability, we just use 0.5 vs 0.5 or 0.9 vs 0.1 as a heuristic
+                    if prediction == "FAKE":
+                        fake_confidence = 0.9
+                        real_confidence = 0.1
+                    else:
+                        fake_confidence = 0.1
+                        real_confidence = 0.9
+
+                # Determine label and styles
+                is_fake = prediction == "FAKE"
+                main_label = "FAKE news" if is_fake else "REAL news"
+                confidence = fake_confidence if is_fake else real_confidence
+
+                badge_class = "fake-badge" if is_fake else "real-badge"
+                emoji = "🚨" if is_fake else "✅"
+
+                # Prediction badge
+                st.markdown(
+                    f"""
+                    <div class="prediction-badge {badge_class}">
+                        <span>{emoji}</span>
+                        <span>{main_label}</span>
+                    </div>
+                    """,
+                    unsafe_allow_html=True,
+                )
+
+                # Confidence bar
+                conf_percent = confidence * 100 if confidence is not None else 0
+
+                if is_fake:
+                    fill_class = "confidence-bar-fill-fake"
+                else:
+                    fill_class = "confidence-bar-fill-real"
+
+                st.markdown(
+                    f"""
+                    <div class="confidence-label">
+                        Model confidence: <strong>{conf_percent:.1f}%</strong>
+                    </div>
+                    <div class="confidence-bar-container">
+                        <div class="{fill_class}" style="width: {conf_percent:.1f}%;"></div>
+                    </div>
+                    """,
+                    unsafe_allow_html=True,
+                )
+
+                # Explanation
+                explanation = generate_explanation(
+                    text_input, prediction, confidence
+                )
+
+                st.markdown("##### 🔍 Explanation (keywords)")
+
+                if (
+                    not explanation["fake_keywords"]
+                    and not explanation["real_keywords"]
+                ):
+                    st.write(
+                        "No specific indicative keywords found in the text. "
+                        "The model relied on overall patterns in the text."
+                    )
+                else:
+                    if explanation["fake_keywords"]:
+                        st.markdown("**Fake-related keywords found:**")
+                        fake_kw_html = "".join(
+                            f"<span class='explanation-item'>{kw}</span>"
+                            for kw in explanation["fake_keywords"]
+                        )
+                        st.markdown(
+                            f"<div class='explanation-list'>{fake_kw_html}</div>",
+                            unsafe_allow_html=True,
+                        )
+
+                    if explanation["real_keywords"]:
+                        st.markdown("**Real-related keywords found:**")
+                        real_kw_html = "".join(
+                            f"<span class='explanation-item'>{kw}</span>"
+                            for kw in explanation["real_keywords"]
+                        )
+                        st.markdown(
+                            f"<div class='explanation-list'>{real_kw_html}</div>",
+                            unsafe_allow_html=True,
+                        )
+
     else:
-        with st.spinner("🔄 Analyzing article..."):
-            # Preprocess
-            processed_text = preprocess_text(input_text)
-            
-            if len(processed_text.split()) < 5:
-                st.error("❌ After preprocessing, text is too short. Please enter more content.")
-            else:
-                # Make prediction
-                try:
-                    prediction = pipeline.predict([processed_text])[0]
-                    proba = pipeline.predict_proba([processed_text])[0]
-                    
-                    confidence = proba[1] * 100 if prediction == 1 else proba[0] * 100
-                    
-                    # Generate explanation
-                    explanation = generate_explanation(input_text, prediction, confidence)
-                    
-                    # Display results
-                    st.markdown("---")
-                    st.header("📊 Analysis Results")
-                    
-                    # Prediction box
-                    if prediction == 1:  # REAL
-                        st.markdown(f"""
-                        <div class="prediction-box real-news">
-                            <div class="prediction-icon">✅</div>
-                            <div class="prediction-label">REAL NEWS</div>
-                            <div class="confidence-text">Confidence: {confidence:.1f}%</div>
-                        </div>
-                        """, unsafe_allow_html=True)
-                    else:  # FAKE
-                        st.markdown(f"""
-                        <div class="prediction-box fake-news">
-                            <div class="prediction-icon">❌</div>
-                            <div class="prediction-label">FAKE NEWS</div>
-                            <div class="confidence-text">Confidence: {confidence:.1f}%</div>
-                        </div>
-                        """, unsafe_allow_html=True)
-                    
-                    # Confidence bar
-                    st.markdown("### Confidence Level")
-                    st.progress(confidence / 100)
-                    
-                    # Metrics row
-                    col1, col2, col3, col4 = st.columns(4)
-                    with col1:
-                        st.metric("Prediction", "REAL" if prediction == 1 else "FAKE")
-                    with col2:
-                        st.metric("Confidence", f"{confidence:.1f}%")
-                    with col3:
-                        st.metric("Word Count", explanation['stats']['word_count'])
-                    with col4:
-                        st.metric("Unique Words", explanation['stats']['unique_words'])
-                    
-                    # Tabs for detailed analysis
-                    st.markdown("---")
-                    tab1, tab2, tab3 = st.tabs(["🎯 Key Indicators", "📊 Text Analysis", "🔍 Details"])
-                    
-                    with tab1:
-                        st.markdown("### Why This Prediction?")
-                        
-                        col1, col2 = st.columns(2)
-                        
-                        with col1:
-                            st.markdown("#### ✅ REAL News Indicators")
-                            if explanation['real_indicators']:
-                                for word in explanation['real_indicators']:
-                                    st.markdown(f"""
-                                    <div class="indicator-box indicator-positive">
-                                        <strong>"{word}"</strong>
-                                    </div>
-                                    """, unsafe_allow_html=True)
-                                st.info(f"Found {len(explanation['real_indicators'])} credibility markers")
-                            else:
-                                st.warning("No strong REAL indicators found")
-                        
-                        with col2:
-                            st.markdown("#### ❌ FAKE News Indicators")
-                            if explanation['fake_indicators']:
-                                for word in explanation['fake_indicators']:
-                                    st.markdown(f"""
-                                    <div class="indicator-box indicator-negative">
-                                        <strong>"{word}"</strong>
-                                    </div>
-                                    """, unsafe_allow_html=True)
-                                st.warning(f"Found {len(explanation['fake_indicators'])} suspicious patterns")
-                            else:
-                                st.success("No fake news patterns detected")
-                        
-                        # Explanation text
-                        st.markdown("---")
-                        st.markdown("### 💡 Interpretation")
-                        
-                        if prediction == 1:  # REAL
-                            st.success(f"""
-                            **This article appears to be REAL news because:**
-                            - Contains {len(explanation['real_indicators'])} credibility markers (e.g., source attribution, official statements)
-                            - Only {len(explanation['fake_indicators'])} sensational patterns
-                            - Professional writing style with {explanation['stats']['word_count']} words
-                            - Model confidence: {confidence:.1f}%
-                            """)
-                        else:  # FAKE
-                            st.error(f"""
-                            **This article appears to be FAKE news because:**
-                            - Contains {len(explanation['fake_indicators'])} sensational patterns (e.g., "BREAKING", "SHOCKING")
-                            - Only {len(explanation['real_indicators'])} credibility markers
-                            - Emotional manipulation detected
-                            - Model confidence: {confidence:.1f}%
-                            """)
-                    
-                    with tab2:
-                        st.markdown("### Text Statistics")
-                        
-                        stats_col1, stats_col2, stats_col3 = st.columns(3)
-                        
-                        with stats_col1:
-                            st.metric(
-                                "Total Words",
-                                explanation['stats']['word_count']
-                            )
-                            st.metric(
-                                "Unique Words",
-                                explanation['stats']['unique_words']
-                            )
-                        
-                        with stats_col2:
-                            st.metric(
-                                "Avg Word Length",
-                                f"{explanation['stats']['avg_word_length']:.1f}"
-                            )
-                            vocab_richness = explanation['stats']['unique_words'] / explanation['stats']['word_count'] if explanation['stats']['word_count'] > 0 else 0
-                            st.metric(
-                                "Vocabulary Richness",
-                                f"{vocab_richness:.2%}"
-                            )
-                        
-                        with stats_col3:
-                            st.metric(
-                                "REAL Indicators",
-                                explanation['stats']['real_indicators']
-                            )
-                            st.metric(
-                                "FAKE Indicators",
-                                explanation['stats']['fake_indicators']
-                            )
-                        
-                        # First 30 words
-                        st.markdown("---")
-                        st.markdown("### 📝 First Words (Processed)")
-                        st.code(' '.join(explanation['all_words']))
-                    
-                    with tab3:
-                        st.markdown("### 🔬 Technical Details")
-                        
-                        # Class probabilities
-                        st.markdown("#### Class Probabilities")
-                        prob_df = pd.DataFrame({
-                            'Class': ['FAKE (0)', 'REAL (1)'],
-                            'Probability': [proba[0], proba[1]]
-                        })
-                        st.bar_chart(prob_df.set_index('Class'))
-                        
-                        # Show probabilities
-                        col1, col2 = st.columns(2)
-                        with col1:
-                            st.metric("P(FAKE)", f"{proba[0]:.4f}")
-                        with col2:
-                            st.metric("P(REAL)", f"{proba[1]:.4f}")
-                        
-                        # Model info
-                        st.markdown("---")
-                        st.markdown("#### Model Information")
-                        st.json({
-                            "Model": metadata['model_name'],
-                            "Test Accuracy": f"{metadata['metrics']['test_accuracy']:.4f}",
-                            "Precision": f"{metadata['metrics']['precision']:.4f}",
-                            "Recall": f"{metadata['metrics']['recall']:.4f}",
-                            "F1-Score": f"{metadata['metrics']['f1']:.4f}"
-                        })
-                        
-                        # Processed text preview
-                        with st.expander("View Preprocessed Text"):
-                            st.text_area(
-                                "Cleaned text used for prediction:",
-                                processed_text[:500] + "..." if len(processed_text) > 500 else processed_text,
-                                height=150,
-                                disabled=True
-                            )
-                
-                except Exception as e:
-                    st.error(f"❌ Error during analysis: {str(e)}")
-                    st.error("Please check that your model file is compatible.")
+        st.info(
+            "Enter a news text on the left and click **Analyze Text** "
+            "to see prediction and explanation here."
+        )
 
 # ============================================================================
 # FOOTER
 # ============================================================================
 
-st.markdown("---")
-st.markdown("""
+st.markdown(
+    """
 <div class="footer">
-    <p><strong>🔍 Fake News Detector</strong></p>
-    <p>Powered by Machine Learning (Decision Tree, 99.51% Accuracy)</p>
-    <p>Trained on ISOT Fake News Dataset (35,000+ articles)</p>
-    <p style="margin-top: 1rem; font-size: 0.9rem;">
-        ⚠️ <em>This is an educational tool. Always verify information from multiple reliable sources.</em>
+    <p>
+        This demo is based on a Decision Tree model trained on the ISOT Fake News dataset.
+        It is for educational purposes only and should not be used as a sole source
+        of truth for critical decisions.
     </p>
     <p style="margin-top: 0.5rem; color: #999; font-size: 0.85rem;">
         © 2024 | Built with Streamlit & scikit-learn
     </p>
 </div>
-""", unsafe_allow_html=True)
+""",
+    unsafe_allow_html=True,
+)
 
 # ============================================================================
 # SESSION STATE INITIALIZATION
 # ============================================================================
 
-if 'input_text' not in st.session_state:
-    st.session_state['input_text'] = ''
-if 'show_examples' not in st.session_state:
-    st.session_state['show_examples'] = False
+if "input_text" not in st.session_state:
+    st.session_state["input_text"] = ""
+if "show_examples" not in st.session_state:
+    st.session_state["show_examples"] = False
