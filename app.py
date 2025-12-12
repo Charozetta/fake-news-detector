@@ -22,7 +22,6 @@ import glob
 from datetime import datetime
 
 # Scikit-learn imports - ИЗМЕНИМ ПОРЯДОК
-import joblib                                         # ← ПЕРВЫМ
 import sklearn                                        # ← ВТОРЫМ
 from sklearn.pipeline import Pipeline
 from sklearn.feature_extraction.text import TfidfVectorizer
