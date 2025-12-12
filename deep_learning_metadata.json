@@ -1,0 +1,24 @@
+{
+  "best_model": "CNN",
+  "config": {
+    "max_words": 10000,
+    "max_length": 200,
+    "embedding_dim": 128,
+    "batch_size": 64,
+    "epochs": 5,
+    "validation_split": 0.2,
+    "random_state": 42
+  },
+  "metrics": {
+    "accuracy": 0.9976822044810714,
+    "precision": 0.9978499761108457,
+    "recall": 0.9978499761108457,
+    "f1_score": 0.9978499761108457,
+    "roc_auc": 0.9996299850259044
+  },
+  "data": {
+    "train_size": 31063,
+    "test_size": 7766,
+    "vocabulary_size": 174105
+  }
+}
