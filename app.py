@@ -19,15 +19,13 @@ import pickle
 import re
 import json
 import os
-import glob                                           
+import glob
 from datetime import datetime
-
-# Scikit-learn imports (required for loading the model)  
-import sklearn                                        
-from sklearn.feature_extraction.text import TfidfVectorizer  
-from sklearn.svm import LinearSVC                     
-from sklearn.pipeline import Pipeline                 
-import joblib                                         
+import sklearn
+from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.svm import LinearSVC
+from sklearn.pipeline import Pipeline   
+import joblib                 
 
 # ============================================================================
 # PAGE CONFIGURATION
