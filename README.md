@@ -4,7 +4,9 @@ AI-powered web application for detecting fake news using Machine Learning.
 
 ## About
 
-This project is a machine learning-based web application that detects fake news articles with **99.52% accuracy**. Built as part of a data science coursework at Karpov.Courses, it demonstrates the practical application of NLP and classical ML algorithms for text classification.
+This project is a machine learning-based web application that detects fake news articles with **99.52% accuracy**. Built as part of a data science coursework at HSE University (Moscow). It demonstrates the practical application of NLP and classical ML algorithms for text classification.
+
+Original Dataset (ISOT) can be found here: https://www.kaggle.com/datasets/csmalarkodi/isot-fake-news-dataset
 
 ** Live Demo:** [Coming Soon - Streamlit Cloud]
 
@@ -108,7 +110,7 @@ fake-news-detector/
 
 ### Using Example Articles
 
-1. Click the **"📰 Examples"** button
+1. Click the **"Examples"** button
 2. Select an example (2 real news, 2 fake news)
 3. Click **"Use This Example"**
 4. Click **"Analyze Article"**
@@ -293,20 +295,10 @@ streamlit run app.py
 3. **Accuracy:**
    - 99.52% accuracy ≠ 100%
    - Always verify from multiple sources
-
-## Future Improvements
-
-- [ ] Multi-language support
-- [ ] Integration with fact-checking APIs
-- [ ] Real-time news feed monitoring
-- [ ] Mobile application
-- [ ] Browser extension
-- [ ] Image and video analysis
-- [ ] Source credibility scoring
-
+   - 
 ## Academic Context
 
-This project was developed as part of the **Machine Learning & NLP course** at **Karpov.Courses**. It demonstrates:
+This project was developed as part of the **Unstructured Data Analysis** modul at **HSEs**. It demonstrates:
 
 - End-to-end ML project workflow
 - Text preprocessing and feature engineering
