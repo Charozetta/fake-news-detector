@@ -457,113 +457,179 @@ with right_col:
     st.markdown("#### 📈 Prediction results")
 
     if analyze_button:
-        if not text_input.strip():
-            st.warning("Please enter some text to analyze.")
-        else:
-            with st.spinner("Analyzing text..."):
-                # Predict using the pipeline directly
-                prediction = pipeline.predict([text_input])[0]
+    if not input_text or len(input_text.strip()) < 50:
+        st.error("❌ Please enter a longer text (at least 50 characters)")
+    else:
+        with st.spinner("🔄 Analyzing article..."):
+            # 1. ПОДГОТАВЛИВАЕМ ТЕКСТ ТАК ЖЕ, КАК В НОУТБУКЕ
+            processed_text = preprocess_text(input_text)
 
-                # Try to get probabilities if supported
+            if len(processed_text.split()) < 5:
+                st.error("❌ After preprocessing, text is too short. Please enter more content.")
+            else:
+                # 2. ПРЕДСКАЗАНИЕ МОДЕЛИ
+                raw_pred = pipeline.predict([processed_text])[0]
+
+                # На всякий случай приводим к нормальному виду
+                is_fake = False
+                label_str = None
+
+                # Числовые метки (0 = FAKE, 1 = REAL)
+                import numpy as np
+                if isinstance(raw_pred, (int, np.integer)):
+                    is_fake = int(raw_pred) == 0
+                    label_str = "FAKE" if is_fake else "REAL"
+
+                # Строковые метки ("FAKE"/"REAL" и т.п.)
+                elif isinstance(raw_pred, str):
+                    lower = raw_pred.lower().strip()
+                    if "fake" in lower or lower == "0":
+                        is_fake = True
+                        label_str = "FAKE"
+                    else:
+                        is_fake = False
+                        label_str = "REAL"
+                else:
+                    # Фоллбэк — считаем всё REAL, но честно пишем тип
+                    is_fake = False
+                    label_str = f"{raw_pred}"
+
+                # 3. ПРОБЫ (если есть)
                 fake_confidence = None
                 real_confidence = None
+                confidence = 90.0  # дефолт на всякий случай
 
                 if hasattr(pipeline, "predict_proba"):
-                    proba = pipeline.predict_proba([text_input])[0]
-                    # Assuming binary classification [FAKE, REAL]
-                    fake_confidence = float(proba[0])
-                    real_confidence = float(proba[1])
+                    try:
+                        proba = pipeline.predict_proba([processed_text])[0]
+
+                        # классы из модели
+                        classes = list(pipeline.classes_)
+
+                        # пытаемся найти индексы классов для FAKE и REAL
+                        fake_idx = None
+                        real_idx = None
+
+                        # числовые метки
+                        if isinstance(classes[0], (int, np.integer)):
+                            if 0 in classes:
+                                fake_idx = classes.index(0)
+                            if 1 in classes:
+                                real_idx = classes.index(1)
+
+                        # строковые метки
+                        if isinstance(classes[0], str):
+                            for i, c in enumerate(classes):
+                                if "fake" in c.lower():
+                                    fake_idx = i
+                                if "real" in c.lower():
+                                    real_idx = i
+
+                        # Если всё нашли — используем реальные вероятности
+                        if fake_idx is not None and real_idx is not None:
+                            fake_confidence = float(proba[fake_idx])
+                            real_confidence = float(proba[real_idx])
+                            confidence = (fake_confidence if is_fake else real_confidence) * 100
+                        else:
+                            # Если не разобрались с классами — оставляем 90%
+                            confidence = 90.0
+                    except Exception:
+                        # Любая ошибка в predict_proba — не ломаем UI
+                        confidence = 90.0
                 else:
-                    # If no probability, we just use 0.5 vs 0.5 or 0.9 vs 0.1 as a heuristic
-                    if prediction == "FAKE":
-                        fake_confidence = 0.9
-                        real_confidence = 0.1
-                    else:
-                        fake_confidence = 0.1
-                        real_confidence = 0.9
+                    # Если predict_proba нет — просто даём 90/10
+                    confidence = 90.0
 
-                # Determine label and styles
-                is_fake = prediction == "FAKE"
-                main_label = "FAKE news" if is_fake else "REAL news"
-                confidence = fake_confidence if is_fake else real_confidence
+                # 4. ГЕНЕРИРУЕМ ОБЪЯСНЕНИЕ (КЛЮЧЕВЫЕ СЛОВА)
+                explanation = generate_explanation(input_text, is_fake, confidence)
 
-                badge_class = "fake-badge" if is_fake else "real-badge"
-                emoji = "🚨" if is_fake else "✅"
+                # 5. ОТРИСОВКА
+                st.markdown("---")
+                st.header("📊 Analysis Results")
 
-                # Prediction badge
-                st.markdown(
-                    f"""
-                    <div class="prediction-badge {badge_class}">
-                        <span>{emoji}</span>
-                        <span>{main_label}</span>
-                    </div>
-                    """,
-                    unsafe_allow_html=True,
-                )
-
-                # Confidence bar
-                conf_percent = confidence * 100 if confidence is not None else 0
-
+                # Prediction box
                 if is_fake:
-                    fill_class = "confidence-bar-fill-fake"
-                else:
-                    fill_class = "confidence-bar-fill-real"
-
-                st.markdown(
-                    f"""
-                    <div class="confidence-label">
-                        Model confidence: <strong>{conf_percent:.1f}%</strong>
+                    st.markdown(f"""
+                    <div class="prediction-box fake-news">
+                        <div class="prediction-icon">❌</div>
+                        <div class="prediction-label">FAKE NEWS</div>
+                        <div class="confidence-text">Confidence: {confidence:.1f}%</div>
                     </div>
-                    <div class="confidence-bar-container">
-                        <div class="{fill_class}" style="width: {conf_percent:.1f}%;"></div>
-                    </div>
-                    """,
-                    unsafe_allow_html=True,
-                )
-
-                # Explanation
-                explanation = generate_explanation(
-                    text_input, prediction, confidence
-                )
-
-                st.markdown("##### 🔍 Explanation (keywords)")
-
-                if (
-                    not explanation["fake_keywords"]
-                    and not explanation["real_keywords"]
-                ):
-                    st.write(
-                        "No specific indicative keywords found in the text. "
-                        "The model relied on overall patterns in the text."
-                    )
+                    """, unsafe_allow_html=True)
                 else:
-                    if explanation["fake_keywords"]:
-                        st.markdown("**Fake-related keywords found:**")
-                        fake_kw_html = "".join(
-                            f"<span class='explanation-item'>{kw}</span>"
-                            for kw in explanation["fake_keywords"]
-                        )
-                        st.markdown(
-                            f"<div class='explanation-list'>{fake_kw_html}</div>",
-                            unsafe_allow_html=True,
-                        )
+                    st.markdown(f"""
+                    <div class="prediction-box real-news">
+                        <div class="prediction-icon">✅</div>
+                        <div class="prediction-label">REAL NEWS</div>
+                        <div class="confidence-text">Confidence: {confidence:.1f}%</div>
+                    </div>
+                    """, unsafe_allow_html=True)
 
-                    if explanation["real_keywords"]:
-                        st.markdown("**Real-related keywords found:**")
-                        real_kw_html = "".join(
-                            f"<span class='explanation-item'>{kw}</span>"
-                            for kw in explanation["real_keywords"]
-                        )
-                        st.markdown(
-                            f"<div class='explanation-list'>{real_kw_html}</div>",
-                            unsafe_allow_html=True,
-                        )
+                # Полоса уверенности
+                st.markdown("### Confidence Level")
+                st.progress(min(max(confidence / 100, 0.0), 1.0))
 
-    else:
-        st.info(
-            "Enter a news text on the left and click **Analyze Text** "
-            "to see prediction and explanation here."
-        )
+                # Метрики
+                col1, col2, col3, col4 = st.columns(4)
+                with col1:
+                    st.metric("Prediction", "FAKE" if is_fake else "REAL")
+                with col2:
+                    st.metric("Confidence", f"{confidence:.1f}%")
+                with col3:
+                    st.metric("Word Count", explanation['stats']['word_count'])
+                with col4:
+                    st.metric("Unique Words", explanation['stats']['unique_words'])
+
+                # Детальные вкладки
+                st.markdown("---")
+                tab1, tab2, tab3 = st.tabs(["🎯 Key Indicators", "📊 Text Analysis", "🔍 Details"])
+
+                with tab1:
+                    st.markdown("### Why This Prediction?")
+
+                    col_a, col_b = st.columns(2)
+
+                    with col_a:
+                        st.markdown("#### ✅ REAL News Indicators")
+                        if explanation['real_indicators']:
+                            for word in explanation['real_indicators']:
+                                st.markdown(f"""
+                                <div class="indicator-box indicator-positive">
+                                    <strong>"{word}"</strong>
+                                </div>
+                                """, unsafe_allow_html=True)
+                            st.info(f"Found {len(explanation['real_indicators'])} credibility markers")
+                        else:
+                            st.warning("No strong REAL indicators found")
+
+                    with col_b:
+                        st.markdown("#### ❌ FAKE News Indicators")
+                        if explanation['fake_indicators']:
+                            for word in explanation['fake_indicators']:
+                                st.markdown(f"""
+                                <div class="indicator-box indicator-negative">
+                                    <strong>"{word}"</strong>
+                                </div>
+                                """, unsafe_allow_html=True)
+                            st.warning(f"Found {len(explanation['fake_indicators'])} suspicious patterns")
+                        else:
+                            st.success("No fake news patterns detected")
+
+                with tab2:
+                    st.markdown("### Text Statistics")
+                    st.write(explanation['stats'])
+                    st.markdown("### Sample of processed words")
+                    st.write(explanation['all_words'])
+
+                with tab3:
+                    st.markdown("### Raw model output (for debugging)")
+                    st.write({"raw_prediction": raw_pred, "is_fake": is_fake})
+
+else:
+    st.info(
+        "Enter a news text on the left and click **Analyze Article** "
+        "to see prediction and explanation here."
+    )
 
 # ============================================================================
 # FOOTER
