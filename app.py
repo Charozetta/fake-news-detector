@@ -1,384 +1,313 @@
-"""
-FAKE NEWS DETECTOR — STREAMLIT DEMO APP (LinearSVC)
-==================================================
-
-Stable demo app for fake news detection.
-
-Assumptions (your artifacts):
-- Model saved as joblib: fake_news_pipeline_YYYYMMDD_HHMMSS.pkl
-- The model is a scikit-learn Pipeline:
-    ('vectorizer', TfidfVectorizer(...)),
-    ('classifier', LinearSVC(...))   # or another linear SVM variant
-- Classes: 0 = FAKE, 1 = REAL
-- Optional metadata: best_model_info.json
-
-Notes:
-- We DO NOT preprocess text before feeding it to the pipeline.
-  The pipeline should receive raw text (as during training).
-- LinearSVC has no predict_proba -> we compute pseudo-confidence from decision_function margin.
-"""
-
-import glob
-import json
-import os
-import re
+import streamlit as st
+import pandas as pd
 import numpy as np
 import joblib
-import streamlit as st
+import os
+import glob
+import json
 
 # ============================================================================
-# PAGE CONFIG
+# PAGE CONFIGURATION
 # ============================================================================
 
 st.set_page_config(
-    page_title="Fake News Detector (Demo)",
+    page_title="Fake News Detector",
     page_icon="🔍",
     layout="wide",
-    initial_sidebar_state="expanded",
+    initial_sidebar_state="expanded"
 )
 
 # ============================================================================
-# BASIC STYLING
+# LOAD ARTIFACTS (SVM PIPELINE + OPTIONAL METADATA)
 # ============================================================================
 
-st.markdown(
-    """
-<style>
-/* Layout */
-main .block-container { max-width: 1200px; padding-top: 2rem; padding-bottom: 2rem; }
-
-/* Badges */
-.prediction-badge {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.5rem;
-    padding: 0.42rem 0.95rem;
-    border-radius: 999px;
-    font-size: 1rem;
-    font-weight: 700;
-    margin: 0.25rem 0 0.8rem 0;
-}
-
-.fake-badge {
-    background: rgba(220,53,69,0.15);
-    color: #dc3545;
-    border: 1px solid rgba(220,53,69,0.65);
-}
-
-.real-badge {
-    background: rgba(40,167,69,0.15);
-    color: #28a745;
-    border: 1px solid rgba(40,167,69,0.65);
-}
-
-/* Confidence bar */
-.confidence-wrap { margin-top: 0.2rem; }
-.confidence-bar {
-    height: 16px;
-    border-radius: 999px;
-    background: rgba(255,255,255,0.08);
-    border: 1px solid rgba(255,255,255,0.12);
-    overflow: hidden;
-}
-.confidence-fill-fake {
-    height: 100%;
-    background: linear-gradient(90deg, #ff6b6b, #dc3545);
-}
-.confidence-fill-real {
-    height: 100%;
-    background: linear-gradient(90deg, #51cf66, #28a745);
-}
-.small-muted { color: rgba(255,255,255,0.65); font-size: 0.9rem; }
-
-/* Keyword chips */
-.keyword {
-    display: inline-block;
-    padding: 0.18rem 0.6rem;
-    border-radius: 999px;
-    background: rgba(255,255,255,0.08);
-    border: 1px solid rgba(255,255,255,0.10);
-    margin: 0.15rem 0.2rem 0 0;
-    font-size: 0.82rem;
-}
-
-/* Section titles */
-.section-title { margin-top: 0.5rem; margin-bottom: 0.25rem; }
-hr { border: none; border-top: 1px solid rgba(255,255,255,0.10); margin: 1.1rem 0; }
-</style>
-""",
-    unsafe_allow_html=True,
-)
-
-# ============================================================================
-# ARTIFACT LOADING
-# ============================================================================
-
-METADATA_FILE = "best_model_info.json"
 MODEL_GLOB = "fake_news_pipeline_*.pkl"
+METADATA_PATH = "best_model_info.json"
 
 
 @st.cache_resource
 def load_pipeline_and_metadata():
-    # Find model file
     files = glob.glob(MODEL_GLOB)
     if not files:
-        st.error(f"❌ No model file found. Expected something like: `{MODEL_GLOB}`")
+        st.error(f"❌ Model file not found. Expected: {MODEL_GLOB}")
         st.stop()
 
-    # Choose most recent by filename sorting (timestamp in name)
     model_path = sorted(files)[-1]
 
-    # Load pipeline
     try:
         pipeline = joblib.load(model_path)
     except Exception as e:
-        st.error(f"❌ Failed to load model `{model_path}`: {e}")
+        st.error(f"❌ Error loading model: {e}")
         st.stop()
 
-    # Load metadata (optional)
     metadata = {}
-    if os.path.exists(METADATA_FILE):
+    if os.path.exists(METADATA_PATH):
         try:
-            with open(METADATA_FILE, "r", encoding="utf-8") as f:
+            with open(METADATA_PATH, "r", encoding="utf-8") as f:
                 metadata = json.load(f)
         except Exception:
             metadata = {}
-    else:
-        metadata = {}
 
     return pipeline, model_path, metadata
 
 
-with st.spinner("🔄 Loading model..."):
-    pipeline, model_path, metadata = load_pipeline_and_metadata()
+pipeline, model_path, metadata = load_pipeline_and_metadata()
 
 # ============================================================================
-# DEMO KEYWORD EXPLANATION (HEURISTIC ONLY)
+# LINEAR SVM PSEUDO-PROBABILITY (decision_function -> sigmoid)
 # ============================================================================
 
-FAKE_KEYWORDS = [
-    "breaking", "shocking", "exclusive", "secret", "conspiracy",
-    "they don't want you", "click", "share", "rumor", "anonymous sources",
-]
-REAL_KEYWORDS = [
-    "according", "report", "official", "data", "study",
-    "research", "statement", "confirmed", "source", "ministry",
-]
-
-
-def normalize_for_keywords(text: str) -> str:
-    text = text.lower()
-    text = re.sub(r"http\S+|www\.\S+", " ", text)
-    text = re.sub(r"\s+", " ", text).strip()
-    return text
-
-
-def generate_explanation_keywords(text: str):
-    t = normalize_for_keywords(text)
-    found_fake = [kw for kw in FAKE_KEYWORDS if kw in t]
-    found_real = [kw for kw in REAL_KEYWORDS if kw in t]
-    return found_fake, found_real
-
-
-# ============================================================================
-# CONFIDENCE FOR LinearSVC (pseudo)
-# ============================================================================
-
-def svm_pseudo_confidence(model, x_text: str):
+def svm_pseudo_probs(pipeline_obj, text: str):
     """
-    For LinearSVC inside a Pipeline: use decision_function margin.
-    Convert margin to pseudo probability via sigmoid.
-    Returns: (p_real_percent, margin) where p_real_percent is in [0..100].
+    Returns:
+      pred (int): 0=FAKE, 1=REAL
+      fake_prob (float): 0..100 (pseudo)
+      real_prob (float): 0..100 (pseudo)
+      margin (float|None): decision margin
     """
-    if not hasattr(model, "decision_function"):
-        return 90.0, None
+    pred = int(pipeline_obj.predict([text])[0])
 
-    try:
-        margin = model.decision_function([x_text])
-        margin = float(np.ravel(margin)[0])
-        p_real = 1.0 / (1.0 + np.exp(-margin))  # sigmoid
-        return float(p_real * 100.0), margin
-    except Exception:
-        return 90.0, None
+    margin = None
+    if hasattr(pipeline_obj, "decision_function"):
+        try:
+            margin_raw = pipeline_obj.decision_function([text])
+            margin = float(np.ravel(margin_raw)[0])
+            # sigmoid -> pseudo prob REAL
+            p_real = 1.0 / (1.0 + np.exp(-margin))
+            p_fake = 1.0 - p_real
+            real_prob = float(p_real * 100.0)
+            fake_prob = float(p_fake * 100.0)
+            return pred, fake_prob, real_prob, margin
+        except Exception:
+            pass
+
+    # Fallback if decision_function missing for some reason
+    # (keeps UI stable)
+    if pred == 1:
+        return pred, 10.0, 90.0, margin
+    return pred, 90.0, 10.0, margin
 
 
-# ============================================================================
-# SIDEBAR
-# ============================================================================
+def predict_fake_news(text: str):
+    """
+    Predict if a news article is fake or real. FAKE=0, REAL=1.
+    Uses pipeline (TF-IDF + LinearSVC).
+    """
+    pred, fake_prob, real_prob, margin = svm_pseudo_probs(pipeline, text)
 
-with st.sidebar:
-    st.markdown("### ⚙️ Demo info")
+    label = "REAL" if pred == 1 else "FAKE"
+    confidence = real_prob if pred == 1 else fake_prob
 
-    st.markdown(f"**Model file:** `{os.path.basename(model_path)}`")
-
-    # Metadata display (if exists)
-    model_name = metadata.get("model_name", "Linear SVM (Pipeline)")
-    vectorizer_name = metadata.get("vectorizer_name", "TF-IDF")
-
-    st.markdown(f"**Model:** `{model_name}`")
-    st.markdown(f"**Vectorizer:** `{vectorizer_name}`")
-    st.markdown("**Classes:** `0 = FAKE`, `1 = REAL`")
-
-    metrics = metadata.get("metrics", {})
-    if metrics:
-        st.markdown("---")
-        st.markdown("#### 📊 Metrics (from training)")
-        st.write({
-            "test_accuracy": metrics.get("test_accuracy"),
-            "precision": metrics.get("precision"),
-            "recall": metrics.get("recall"),
-            "f1": metrics.get("f1"),
-        })
-
-    st.markdown("---")
-    st.markdown("#### 🧪 Insert examples")
-    example_fake = st.checkbox("Insert FAKE example", value=False)
-    example_real = st.checkbox("Insert REAL example", value=False)
-
-    st.markdown("---")
-    show_debug = st.checkbox("Show debug output", value=True)
+    return {
+        "text": text[:200] + "..." if len(text) > 200 else text,
+        "label": label,
+        "confidence": confidence,
+        "fake_prob": fake_prob,
+        "real_prob": real_prob,
+        # debug fields (optional)
+        "pred_raw": pred,
+        "svm_margin": margin
+    }
 
 # ============================================================================
-# MAIN UI
+# MAIN UI (same structure as your Logistic Regression app)
 # ============================================================================
 
-st.title("🔍 Real-time Fake News Classifier (Demo)")
-st.write(
-    "Paste a news article or statement below. The model predicts whether it is **FAKE** or **REAL**. "
-    "Confidence is shown as a **pseudo-confidence** (LinearSVC margin → sigmoid), and the explanation "
-    "is a simple keyword heuristic for demo only."
-)
+st.markdown("# 🔍 Fake News Detection System")
+st.markdown("**Detect whether a news article is FAKE or REAL using Machine Learning**")
+st.markdown("---")
 
-col_left, col_right = st.columns([1.4, 1])
+# Create tabs
+tab1, tab2, tab3, tab4 = st.tabs(["🎯 Prediction", "📊 About Model", "📚 Examples", "ℹ️ How it Works"])
 
-# ---------------------------------------------------------------------------
-# INPUT
-# ---------------------------------------------------------------------------
+# ============================================================================
+# TAB 1: PREDICTION
+# ============================================================================
 
-with col_left:
-    default_text = ""
+with tab1:
+    st.subheader("Enter News Article Text")
 
-    if example_fake:
-        default_text = (
-            "BREAKING: Celebrity reveals a secret conspiracy controlling global events. "
-            "Anonymous sources claim shocking evidence will be released soon. Share this now!"
-        )
-    elif example_real:
-        default_text = (
-            "The finance ministry said the budget deficit narrowed in the third quarter, "
-            "supported by higher tax revenues and lower energy subsidies. Officials added "
-            "that inflation remains stable and economic growth forecasts were revised upward."
-        )
-
-    text_input = st.text_area(
-        "Input text",
-        value=default_text,
-        height=260,
-        placeholder="Paste or type a news article here...",
+    user_text = st.text_area(
+        "Paste your news article here:",
+        height=200,
+        placeholder="Enter the news article text you want to check..."
     )
 
-    analyze = st.button("🔍 Analyze text", type="primary")
+    col1, col2 = st.columns(2)
 
-# ---------------------------------------------------------------------------
-# OUTPUT
-# ---------------------------------------------------------------------------
+    with col1:
+        predict_button = st.button("🔍 Analyze", key="predict_main")
 
-with col_right:
-    st.markdown("### 📊 Prediction")
+    with col2:
+        clear_button = st.button("🗑️ Clear", key="clear_main")
 
-    if analyze:
-        if not text_input or len(text_input.strip()) < 50:
-            st.error("❌ Please enter at least 50 characters.")
+    if clear_button:
+        st.rerun()
+
+    if predict_button:
+        if not user_text.strip():
+            st.warning("⚠️ Please enter some text to analyze!")
+        elif len(user_text.strip()) < 30:
+            st.warning("⚠️ Text is too short for a stable prediction. Please paste a longer snippet.")
         else:
-            # IMPORTANT: do NOT preprocess before pipeline
-            raw_pred = pipeline.predict([text_input])[0]
-            pred_int = int(raw_pred)
+            with st.spinner("Analyzing text..."):
+                result = predict_fake_news(user_text)
 
-            is_fake = pred_int == 0
-            label = "FAKE news" if is_fake else "REAL news"
-            emoji = "🚨" if is_fake else "✅"
-            badge_class = "fake-badge" if is_fake else "real-badge"
+            st.markdown("---")
+            st.subheader("📋 Analysis Results")
 
-            # Pseudo confidence from SVM margin
-            p_real, margin = svm_pseudo_confidence(pipeline, text_input)
-            p_fake = 100.0 - p_real
-            confidence = p_fake if is_fake else p_real
+            if result['label'] == 'REAL':
+                st.success(f"✅ **REAL NEWS** - Confidence: {result['confidence']:.2f}%")
+            else:
+                st.error(f"❌ **FAKE NEWS** - Confidence: {result['confidence']:.2f}%")
 
-            # Badge
-            st.markdown(
-                f"""
-                <div class="prediction-badge {badge_class}">
-                    {emoji} {label}
-                </div>
-                """,
-                unsafe_allow_html=True,
-            )
+            col1, col2 = st.columns(2)
+            with col1:
+                st.metric("FAKE Probability", f"{result['fake_prob']:.2f}%")
+            with col2:
+                st.metric("REAL Probability", f"{result['real_prob']:.2f}%")
 
-            # Confidence bar
-            fill_class = "confidence-fill-fake" if is_fake else "confidence-fill-real"
-            st.markdown(
-                f"""
-                <div class="confidence-wrap">
-                    <div>Model pseudo-confidence: <strong>{confidence:.1f}%</strong>
-                    <span class="small-muted">(LinearSVC margin → sigmoid)</span></div>
-                    <div class="confidence-bar">
-                        <div class="{fill_class}" style="width:{confidence:.1f}%"></div>
-                    </div>
-                </div>
-                """,
-                unsafe_allow_html=True,
-            )
+            st.subheader("📈 Probability Distribution")
+            chart_data = pd.DataFrame({
+                'Label': ['FAKE', 'REAL'],
+                'Probability': [result['fake_prob'], result['real_prob']]
+            })
+            st.bar_chart(chart_data.set_index('Label'))
 
-            # Explanation (keywords demo)
-            fake_kw, real_kw = generate_explanation_keywords(text_input)
-
-            st.markdown("### 🔎 Explanation (keywords — demo)")
-
-            if not fake_kw and not real_kw:
-                st.write(
-                    "No indicative keywords found. The model relied on broader text patterns."
-                )
-
-            if fake_kw:
-                st.markdown("**Fake-related keywords found:**")
-                st.markdown(
-                    "".join(f"<span class='keyword'>{kw}</span>" for kw in fake_kw),
-                    unsafe_allow_html=True,
-                )
-
-            if real_kw:
-                st.markdown("**Real-related keywords found:**")
-                st.markdown(
-                    "".join(f"<span class='keyword'>{kw}</span>" for kw in real_kw),
-                    unsafe_allow_html=True,
-                )
-
-            if show_debug:
-                st.markdown("### 🧪 Debug")
-                st.write(
-                    {
-                        "raw_prediction": pred_int,
-                        "classes_expected": {0: "FAKE", 1: "REAL"},
-                        "svm_margin": None if margin is None else float(margin),
-                        "pseudo_real_%": float(p_real),
-                        "pseudo_fake_%": float(p_fake),
-                    }
-                )
-    else:
-        st.info("Enter text and click **Analyze text**.")
+            # Optional Debug expander (you can remove for final demo)
+            with st.expander("🧪 Debug (optional)"):
+                st.write({
+                    "pred_raw": result["pred_raw"],
+                    "svm_margin": result["svm_margin"],
+                    "model_file": os.path.basename(model_path)
+                })
 
 # ============================================================================
-# FOOTER
+# TAB 2: ABOUT MODEL
 # ============================================================================
 
-st.markdown(
-    """
-<hr>
-<div class="small-muted">
-This is a <strong>demo application</strong> for educational purposes.  
-The keyword explanation is heuristic and not a true model interpretation.  
-LinearSVC does not output calibrated probabilities by default; the confidence shown is a pseudo-confidence derived from the decision margin.
-</div>
-""",
-    unsafe_allow_html=True,
-)
+with tab2:
+    st.subheader("📊 Model Information")
+
+    col1, col2 = st.columns(2)
+
+    model_name = metadata.get("model_name", "Linear SVM (LinearSVC)")
+    vectorizer_name = metadata.get("vectorizer_name", "TF-IDF")
+    metrics = metadata.get("metrics", {})
+
+    with col1:
+        st.info(f"""
+        **Model Architecture:**
+        - Algorithm: {model_name}
+        - Feature Extraction: {vectorizer_name}
+        - Training Data: ISOT Fake News Dataset
+        - Classes: 0 = FAKE, 1 = REAL
+        - Artifact: {os.path.basename(model_path)}
+        """)
+
+    # If you want hardcoded “pretty” metrics like LR demo, you can keep them.
+    # But we will display what is in best_model_info.json if present.
+    with col2:
+        if metrics:
+            st.success(f"""
+            **Model Performance (from training):**
+            - Accuracy: {metrics.get("test_accuracy", 0.0) * 100:.2f}%
+            - Precision: {metrics.get("precision", 0.0) * 100:.2f}%
+            - Recall: {metrics.get("recall", 0.0) * 100:.2f}%
+            - F1-Score: {metrics.get("f1", 0.0) * 100:.2f}%
+            """)
+        else:
+            st.success("""
+            **Model Performance:**
+            - Metrics not found in best_model_info.json
+            (this is fine for demo — you can add them later)
+            """)
+
+    st.subheader("📈 Dataset Statistics")
+    dataset_stats = {
+        'Category': ['Real News', 'Fake News', 'Total'],
+        'Count': [21417, 23481, 44898],
+        'Percentage': ['48.2%', '51.8%', '100%']
+    }
+    df_stats = pd.DataFrame(dataset_stats)
+    st.table(df_stats)
+
+# ============================================================================
+# TAB 3: EXAMPLES
+# ============================================================================
+
+with tab3:
+    st.subheader("📚 Example Articles")
+
+    # Real News Example (Reuters-style works best with ISOT)
+    st.markdown("### ✅ Real News Example")
+    real_example = (
+        "The finance ministry said the budget deficit narrowed in the third quarter, "
+        "supported by higher tax revenues and lower energy subsidies. Officials added "
+        "that inflation remained stable and growth forecasts were revised upward."
+    )
+    st.write(real_example)
+
+    if st.button("Analyze Real News Example", key="real_example_btn"):
+        result = predict_fake_news(real_example)
+        if result['label'] == 'REAL':
+            st.success(f"✅ Prediction: **{result['label']}** (Confidence: {result['confidence']:.2f}%)")
+        else:
+            st.warning(f"⚠️ Prediction: **{result['label']}** (Confidence: {result['confidence']:.2f}%)")
+
+    st.markdown("---")
+
+    # Fake News Example
+    st.markdown("### ❌ Fake News Example")
+    fake_example = (
+        "Breaking news alert: Celebrity announces secret government conspiracy. "
+        "The star has revealed shocking evidence about a hidden organization controlling world events. "
+        "Government officials deny all allegations as sources remain anonymous and unverifiable."
+    )
+    st.write(fake_example)
+
+    if st.button("Analyze Fake News Example", key="fake_example_btn"):
+        result = predict_fake_news(fake_example)
+        if result['label'] == 'FAKE':
+            st.error(f"❌ Prediction: **{result['label']}** (Confidence: {result['confidence']:.2f}%)")
+        else:
+            st.warning(f"⚠️ Prediction: **{result['label']}** (Confidence: {result['confidence']:.2f}%)")
+
+# ============================================================================
+# TAB 4: HOW IT WORKS
+# ============================================================================
+
+with tab4:
+    st.subheader("❓ How Does It Work?")
+    st.markdown("""
+    ### 1. **Feature Extraction**
+    - TF-IDF vectorization (learned from training data)
+    - Each feature represents a word/term importance in the text
+    
+    ### 2. **Prediction**
+    - Linear SVM (LinearSVC) separates FAKE vs REAL using a linear decision boundary
+    - Output is a class label: FAKE (0) or REAL (1)
+    
+    ### 3. **Confidence (Demo)**
+    - LinearSVC does not produce calibrated probabilities by default
+    - For demo UI we compute **pseudo-probabilities** from the SVM decision margin
+      using a sigmoid transformation (margin → value between 0 and 1)
+    
+    ### 4. **Important**
+    - This model detects statistical patterns in text, not truth
+    - Always cross-check important information using reliable sources
+    """)
+
+    st.warning("""
+    ⚠️ **Important Notes:**
+    - This tool provides predictions, not absolute truths
+    - Dataset bias matters (ISOT “REAL” often resembles Reuters-style reporting)
+    - Use this as a demo/educational system, not a full fact-checker
+    """)
+
+st.markdown("---")
+st.markdown("""
+    <div style="text-align: center; color: gray; font-size: 0.8rem;">
+    <p>Fake News Detection System | Built with Streamlit & Scikit-learn</p>
+    </div>
+    """, unsafe_allow_html=True)
