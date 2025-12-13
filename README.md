@@ -22,7 +22,7 @@ The application classifies news text as **FAKE** or **REAL** and is built with
 ---
 
 ## Repository Structure
-
+```
 ├── app.py
 ├── README.md
 ├── requirements.txt
@@ -32,6 +32,7 @@ The application classifies news text as **FAKE** or **REAL** and is built with
 ├── deep_learning_comparison_results.csv
 ├── deep_learning_metadata.json
 └── dl_tokenizer.pkl
+```
 
 
 ---
