@@ -43,5 +43,6 @@ The application classifies news text as **FAKE** or **REAL** and is built with
 pip install -r requirements.txt
 ```
 ### 2. Run Streamlit
-
+```
 streamlit run app.py
+```
