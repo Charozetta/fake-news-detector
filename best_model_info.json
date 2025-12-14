@@ -1,17 +1,24 @@
 {
-  "model_name": "Linear SVM",
-  "vectorizer_name": "TF-IDF",
-  "pipeline_file": "fake_news_pipeline_20251211_172354.pkl",
+  "model_name": "Fake News Classifier (Linear SVM)",
+  "algorithm": "LinearSVC",
+  "task": "Binary text classification",
+  "classes": {
+    "0": "FAKE",
+    "1": "REAL"
+  },
+  "vectorizer": "TF-IDF",
+  "training_dataset": "ISOT Fake News Dataset",
   "metrics": {
-    "train_accuracy": 0.9996458809516144,
-    "test_accuracy": 0.9952356425444244,
-    "precision": 0.9947531600286191,
-    "recall": 0.9964166268514094,
-    "f1": 0.9955841985917174
+    "accuracy": 0.995,
+    "precision": 0.989,
+    "recall": 0.990,
+    "f1_score": 0.989
   },
-  "data": {
-    "train_size": 31063,
-    "test_size": 7766
-  },
-  "timestamp": "20251211_172354"
+  "intended_use": "Demo / educational purposes",
+  "limitations": [
+    "Dataset-specific bias (ISOT)",
+    "Not a fact-checking system",
+    "SVM confidence is margin-based, not probabilistic"
+  ],
+  "created_at": "2025-12-11T17:23:54Z"
 }
