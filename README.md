@@ -18,6 +18,7 @@ The application classifies news text as **FAKE** or **REAL** and is built with
 - **Text Representation:** TF-IDF
 - **Dataset:** ISOT Fake News Dataset
 - **Purpose:** Educational / demonstration
+- **Original Dataset:** Can be download here: https://www.kaggle.com/datasets/csmalarkodi/isot-fake-news-dataset
 
 ---
 
