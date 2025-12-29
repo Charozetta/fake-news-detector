@@ -26,7 +26,7 @@ The application classifies news text as **FAKE** or **REAL** and is built with
 ├── app.py
 ├── README.md
 ├── requirements.txt
-├── fake_news_pipeline_20251211_172354.pkl
+├── fake_news_pipeline.pkl
 ├── best_model_info.json
 ├── model_comparison_results.csv
 ├── deep_learning_comparison_results.csv
