@@ -21,7 +21,7 @@ st.set_page_config(
 # LOAD ARTIFACTS (SVM PIPELINE + OPTIONAL METADATA)
 # ============================================================================
 
-MODEL_GLOB = "fake_news_pipeline_*.pkl"
+MODEL_GLOB = "fake_news_pipeline.pkl"
 METADATA_PATH = "best_model_info.json"
 
 
