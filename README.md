@@ -27,7 +27,7 @@ The application classifies news text as **FAKE** or **REAL** and is built with
 ├── app.py
 ├── README.md
 ├── requirements.txt
-├── fake_news_pipeline.pkl
+├── ISOT_Fake_News_Detection_Project.ipynb
 ├── best_model_info.json
 ├── model_comparison_results.csv
 ├── deep_learning_comparison_results.csv
